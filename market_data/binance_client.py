@@ -79,6 +79,8 @@ class BinancePublicDataClient:
         symbol: str,
         interval: str,
         limit: int = 500,
+        *,
+        closed_only: bool = False,
     ) -> pd.DataFrame:
         """Retrieve historical OHLCV candles for a supported symbol."""
 
@@ -129,5 +131,11 @@ class BinancePublicDataClient:
         frame["trade_count"] = pd.to_numeric(
             frame["trade_count"], errors="raise"
         ).astype("int64")
+
+        if closed_only:
+            now = pd.Timestamp.now(tz="UTC")
+            frame = frame.loc[
+                frame["close_time"] < now
+            ].copy()
 
         return frame

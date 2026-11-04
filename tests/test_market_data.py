@@ -101,3 +101,81 @@ def test_empty_candle_response_is_rejected(client):
 
     with pytest.raises(ValueError, match="no candle data"):
         client.get_historical_candles("BTC/USDT", "1h")
+def test_closed_only_excludes_unfinished_candle(client):
+    now = pd.Timestamp.now(tz="UTC")
+    completed_close = int((now - pd.Timedelta(minutes=10)).timestamp() * 1000)
+    unfinished_close = int((now + pd.Timedelta(minutes=50)).timestamp() * 1000)
+
+    def make_candle(open_time, close_time):
+        return [
+            open_time,
+            "60000",
+            "61000",
+            "59000",
+            "60500",
+            "12.5",
+            close_time,
+            "750000",
+            120,
+            "6.5",
+            "390000",
+            "0",
+        ]
+
+    candles = [
+        make_candle(completed_close - 3600000, completed_close),
+        make_candle(now.timestamp() * 1000, unfinished_close),
+    ]
+
+    client.session.get = Mock(
+        return_value=make_response(candles)
+    )
+
+    result = client.get_historical_candles(
+        "BTC/USDT", "1h", limit=2, closed_only=True
+    )
+
+    assert len(result) == 1
+    assert result.iloc[0]["close_time"] < pd.Timestamp.now(tz="UTC")
+
+
+def test_closed_only_false_keeps_unfinished_candle(client):
+    now = pd.Timestamp.now(tz="UTC")
+    close_time = int((now + pd.Timedelta(minutes=30)).timestamp() * 1000)
+
+    candle = [
+        int(now.timestamp() * 1000),
+        "60000", "61000", "59000", "60500", "12.5",
+        close_time, "750000", 120, "6.5", "390000", "0",
+    ]
+
+    client.session.get = Mock(
+        return_value=make_response([candle])
+    )
+
+    result = client.get_historical_candles(
+        "BTC/USDT", "1h", limit=1, closed_only=False
+    )
+
+    assert len(result) == 1
+
+
+def test_closed_only_returns_empty_when_no_candles_are_complete(client):
+    now = pd.Timestamp.now(tz="UTC")
+    close_time = int((now + pd.Timedelta(minutes=30)).timestamp() * 1000)
+
+    candle = [
+        int(now.timestamp() * 1000),
+        "60000", "61000", "59000", "60500", "12.5",
+        close_time, "750000", 120, "6.5", "390000", "0",
+    ]
+
+    client.session.get = Mock(
+        return_value=make_response([candle])
+    )
+
+    result = client.get_historical_candles(
+        "BTC/USDT", "1h", limit=1, closed_only=True
+    )
+
+    assert result.empty
