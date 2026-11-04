@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from analysis.indicators import calculate_sma, calculate_ema
+from analysis.indicators import calculate_sma, calculate_ema, calculate_rsi
 
 
 def test_sma_calculates_correct_average():
@@ -98,3 +98,77 @@ def test_ema_rejects_boolean_span():
 def test_ema_rejects_non_series_input():
     with pytest.raises(TypeError):
         calculate_ema([10, 20, 30], span=2)
+def test_rsi_calculates_wilders_initial_average():
+    prices = pd.Series([10, 11, 12, 11])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert pd.isna(result.iloc[0])
+    assert pd.isna(result.iloc[1])
+    assert pd.isna(result.iloc[2])
+    assert result.iloc[3] == pytest.approx(66.6666667)
+
+
+def test_rsi_uses_wilders_smoothing():
+    prices = pd.Series([10, 11, 12, 11, 12])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert result.iloc[4] == pytest.approx(77.7777778)
+
+
+def test_rsi_returns_100_when_prices_only_rise():
+    prices = pd.Series([10, 11, 12, 13, 14])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert result.iloc[3] == 100
+
+
+def test_rsi_returns_zero_when_prices_only_fall():
+    prices = pd.Series([14, 13, 12, 11, 10])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert result.iloc[3] == 0
+
+
+def test_rsi_returns_50_when_prices_are_flat():
+    prices = pd.Series([10, 10, 10, 10, 10])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert result.iloc[3] == 50
+
+
+def test_rsi_returns_missing_values_until_period_is_ready():
+    prices = pd.Series([10, 11, 12])
+
+    result = calculate_rsi(prices, period=3)
+
+    assert result.isna().all()
+
+
+def test_rsi_rejects_zero_period():
+    with pytest.raises(ValueError):
+        calculate_rsi(pd.Series([10, 11]), period=0)
+
+
+def test_rsi_rejects_negative_period():
+    with pytest.raises(ValueError):
+        calculate_rsi(pd.Series([10, 11]), period=-2)
+
+
+def test_rsi_rejects_non_integer_period():
+    with pytest.raises(ValueError):
+        calculate_rsi(pd.Series([10, 11]), period=2.5)
+
+
+def test_rsi_rejects_boolean_period():
+    with pytest.raises(ValueError):
+        calculate_rsi(pd.Series([10, 11]), period=True)
+
+
+def test_rsi_rejects_non_series_input():
+    with pytest.raises(TypeError):
+        calculate_rsi([10, 11, 12], period=2)
