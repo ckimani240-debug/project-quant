@@ -150,3 +150,69 @@ def test_invalid_trade_side_is_rejected(setup_trader):
             portfolio, "BTC/USDT", "hold", 0.001, 60000,
             approved=True,
         )
+
+
+def test_purchase_blocked_when_exposure_limit_is_reached(setup_trader):
+    engine, portfolio = setup_trader
+
+    with pytest.raises(PermissionError, match="risk manager"):
+        engine.execute_trade(
+            portfolio, "BTC/USDT", "buy", 0.01, 60000,
+            approved=True,
+        )
+
+    assert portfolio.cash_balance == 1000.0
+    assert portfolio.holdings == {}
+    assert portfolio.transactions == []
+
+
+def test_approved_sale_allowed_after_daily_loss_limit(setup_trader):
+    engine, portfolio = setup_trader
+
+    engine.execute_trade(
+        portfolio, "BTC/USDT", "buy", 0.001, 60000,
+        approved=True,
+    )
+
+    portfolio.cash_balance -= 40.0
+
+    transaction = engine.execute_trade(
+        portfolio, "BTC/USDT", "sell", 0.001, 61000,
+        approved=True,
+    )
+
+    assert transaction.side == "sell"
+    assert "BTC/USDT" not in portfolio.holdings
+
+
+def test_purchase_checks_prices_of_other_existing_holdings(setup_trader):
+    engine, portfolio = setup_trader
+
+    portfolio.holdings["BTC/USDT"] = 0.001
+
+    with pytest.raises(ValueError, match="Missing market price"):
+        engine.execute_trade(
+            portfolio, "ETH/USDT", "buy", 0.1, 2000,
+            approved=True,
+        )
+
+
+def test_purchase_uses_other_holding_value_for_exposure(setup_trader):
+    engine, portfolio = setup_trader
+
+    portfolio.holdings["BTC/USDT"] = 0.008
+    portfolio.cash_balance -= 480.0
+
+    with pytest.raises(PermissionError, match="risk manager"):
+        engine.execute_trade(
+            portfolio,
+            "ETH/USDT",
+            "buy",
+            0.1,
+            2000,
+            approved=True,
+            market_prices={"BTC/USDT": 60000},
+        )
+
+    assert portfolio.holdings == {"BTC/USDT": 0.008}
+    assert len(portfolio.transactions) == 0
