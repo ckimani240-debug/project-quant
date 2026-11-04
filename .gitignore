@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project Quant
+.env.*
+!.env.example
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+*.sqlite
+*.db
