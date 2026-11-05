@@ -33,6 +33,45 @@ class RiskManager:
         self.day_start_value: float | None = None
         self.current_day: date | None = None
 
+    def max_risk_amount(self, portfolio_value: float) -> float:
+        """Largest loss (in USDT) one trade may risk, per max_risk_per_trade."""
+
+        if not math.isfinite(portfolio_value) or portfolio_value <= 0:
+            raise ValueError("Portfolio value must be positive and finite")
+
+        return portfolio_value * self.settings.max_risk_per_trade
+
+    def calculate_trade_risk(
+        self,
+        quantity: float,
+        execution_price: float,
+        stop_price: float,
+    ) -> float:
+        """Loss (in USDT) if a purchase is exited at its stop price.
+
+        Includes the entry fee, the exit fee and exit slippage, so it is
+        the cash paid in minus the cash received back at the stop.
+        """
+
+        for name, value in (
+            ("quantity", quantity),
+            ("execution_price", execution_price),
+            ("stop_price", stop_price),
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be a positive finite number")
+
+        if stop_price >= execution_price:
+            raise ValueError("stop_price must be below the execution price")
+
+        fee = self.settings.fee_rate
+        slippage = self.settings.slippage_rate
+
+        cash_paid = quantity * execution_price * (1 + fee)
+        cash_back = quantity * stop_price * (1 - slippage) * (1 - fee)
+
+        return cash_paid - cash_back
+
     def assess(
         self,
         portfolio: Portfolio,

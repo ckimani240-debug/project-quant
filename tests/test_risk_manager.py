@@ -120,3 +120,42 @@ def test_invalid_market_price_is_rejected(setup_risk):
 
     with pytest.raises(ValueError):
         manager.assess(portfolio, {"BTC/USDT": 0})
+
+
+def test_trade_risk_includes_fees_and_slippage(setup_risk):
+    manager, _ = setup_risk
+
+    # Pay 100 * 1.001 = 100.1. Stop at 90 returns 90 * 0.9995 * 0.999.
+    risk = manager.calculate_trade_risk(1, 100, 90)
+
+    assert risk == pytest.approx(100.1 - 90 * 0.9995 * 0.999)
+
+
+def test_trade_risk_rejects_stop_at_or_above_price(setup_risk):
+    manager, _ = setup_risk
+
+    with pytest.raises(ValueError, match="below the execution price"):
+        manager.calculate_trade_risk(1, 100, 100)
+
+
+@pytest.mark.parametrize("bad", [0, -1, float("nan"), float("inf")])
+def test_trade_risk_rejects_invalid_numbers(setup_risk, bad):
+    manager, _ = setup_risk
+
+    with pytest.raises(ValueError):
+        manager.calculate_trade_risk(bad, 100, 90)
+
+    with pytest.raises(ValueError):
+        manager.calculate_trade_risk(1, bad, 90)
+
+    with pytest.raises(ValueError):
+        manager.calculate_trade_risk(1, 100, bad)
+
+
+def test_max_risk_amount_is_one_percent_of_portfolio(setup_risk):
+    manager, _ = setup_risk
+
+    assert manager.max_risk_amount(1000) == pytest.approx(10.0)
+
+    with pytest.raises(ValueError):
+        manager.max_risk_amount(0)

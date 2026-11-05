@@ -28,6 +28,7 @@ def test_approved_btc_purchase(setup_trader):
     transaction = engine.execute_trade(
         portfolio, "BTC/USDT", "buy", 0.001, 60000,
         approved=True,
+            stop_price=57000,
     )
 
     assert transaction.side == "buy"
@@ -42,6 +43,7 @@ def test_purchase_includes_fee_and_slippage(setup_trader):
     transaction = engine.execute_trade(
         portfolio, "BTC/USDT", "buy", 0.001, 60000,
         approved=True,
+            stop_price=57000,
     )
 
     expected_price = 60000 * (1 + engine.settings.slippage_rate)
@@ -60,6 +62,7 @@ def test_eth_purchase(setup_trader):
     engine.execute_trade(
         portfolio, "ETH/USDT", "buy", 0.1, 2000,
         approved=True,
+            stop_price=1950,
     )
 
     assert portfolio.holdings["ETH/USDT"] == 0.1
@@ -71,6 +74,7 @@ def test_sale_updates_cash_and_holdings(setup_trader):
     engine.execute_trade(
         portfolio, "BTC/USDT", "buy", 0.001, 60000,
         approved=True,
+            stop_price=57000,
     )
 
     engine.execute_trade(
@@ -90,6 +94,7 @@ def test_insufficient_cash_is_rejected(setup_trader):
         engine.execute_trade(
             portfolio, "BTC/USDT", "buy", 1, 60000,
             approved=True,
+            stop_price=57000,
         )
 
     assert portfolio.cash_balance == 1000.0
@@ -117,6 +122,7 @@ def test_unsupported_asset_is_rejected(setup_trader, symbol):
         engine.execute_trade(
             portfolio, symbol, "buy", 1, 1,
             approved=True,
+            stop_price=57000,
         )
 
 
@@ -128,6 +134,7 @@ def test_invalid_price_is_rejected(setup_trader, price):
         engine.execute_trade(
             portfolio, "BTC/USDT", "buy", 0.001, price,
             approved=True,
+            stop_price=1,
         )
 
 
@@ -139,6 +146,7 @@ def test_invalid_quantity_is_rejected(setup_trader, quantity):
         engine.execute_trade(
             portfolio, "BTC/USDT", "buy", quantity, 60000,
             approved=True,
+            stop_price=57000,
         )
 
 
@@ -159,6 +167,7 @@ def test_purchase_blocked_when_exposure_limit_is_reached(setup_trader):
         engine.execute_trade(
             portfolio, "BTC/USDT", "buy", 0.01, 60000,
             approved=True,
+            stop_price=57000,
         )
 
     assert portfolio.cash_balance == 1000.0
@@ -172,6 +181,7 @@ def test_approved_sale_allowed_after_daily_loss_limit(setup_trader):
     engine.execute_trade(
         portfolio, "BTC/USDT", "buy", 0.001, 60000,
         approved=True,
+            stop_price=57000,
     )
 
     portfolio.cash_balance -= 40.0
@@ -194,6 +204,7 @@ def test_purchase_checks_prices_of_other_existing_holdings(setup_trader):
         engine.execute_trade(
             portfolio, "ETH/USDT", "buy", 0.1, 2000,
             approved=True,
+            stop_price=1900,
         )
 
 
@@ -211,8 +222,83 @@ def test_purchase_uses_other_holding_value_for_exposure(setup_trader):
             0.1,
             2000,
             approved=True,
+            stop_price=1900,
             market_prices={"BTC/USDT": 60000},
         )
 
     assert portfolio.holdings == {"BTC/USDT": 0.008}
     assert len(portfolio.transactions) == 0
+
+
+def test_purchase_without_stop_price_is_rejected(setup_trader):
+    engine, portfolio = setup_trader
+
+    with pytest.raises(ValueError, match="stop_price is required"):
+        engine.execute_trade(
+            portfolio, "BTC/USDT", "buy", 0.001, 60000,
+            approved=True,
+        )
+
+    assert portfolio.cash_balance == 1000.0
+    assert portfolio.transactions == []
+
+
+@pytest.mark.parametrize(
+    "stop", [0, -1, float("nan"), float("inf"), 60000, 61000]
+)
+def test_invalid_stop_price_is_rejected(setup_trader, stop):
+    engine, portfolio = setup_trader
+
+    with pytest.raises(ValueError):
+        engine.execute_trade(
+            portfolio, "BTC/USDT", "buy", 0.001, 60000,
+            approved=True,
+            stop_price=stop,
+        )
+
+    assert portfolio.transactions == []
+
+
+def test_purchase_risking_more_than_one_percent_is_blocked(setup_trader):
+    engine, portfolio = setup_trader
+
+    # 0.001 BTC with a stop at 1000 would lose about 59 USDT (5.9%).
+    with pytest.raises(PermissionError, match="risk per trade"):
+        engine.execute_trade(
+            portfolio, "BTC/USDT", "buy", 0.001, 60000,
+            approved=True,
+            stop_price=1000,
+        )
+
+    assert portfolio.cash_balance == 1000.0
+    assert portfolio.holdings == {}
+    assert portfolio.transactions == []
+
+
+def test_purchase_within_one_percent_risk_is_allowed(setup_trader):
+    engine, portfolio = setup_trader
+
+    # 0.001 BTC with a stop at 57000 loses about 3.2 USDT (0.3%).
+    transaction = engine.execute_trade(
+        portfolio, "BTC/USDT", "buy", 0.001, 60000,
+        approved=True,
+        stop_price=57000,
+    )
+
+    assert transaction.side == "buy"
+
+
+def test_sale_does_not_need_a_stop_price(setup_trader):
+    engine, portfolio = setup_trader
+
+    engine.execute_trade(
+        portfolio, "BTC/USDT", "buy", 0.001, 60000,
+        approved=True,
+        stop_price=57000,
+    )
+    transaction = engine.execute_trade(
+        portfolio, "BTC/USDT", "sell", 0.001, 61000,
+        approved=True,
+    )
+
+    assert transaction.side == "sell"

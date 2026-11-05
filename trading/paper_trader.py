@@ -28,11 +28,14 @@ class PaperTradingEngine:
         *,
         approved: bool = False,
         market_prices: dict[str, float] | None = None,
+        stop_price: float | None = None,
     ) -> Transaction:
         """Execute one approved virtual buy or sell.
 
         market_prices supplies current prices for other existing holdings.
         The traded symbol's supplied market_price takes precedence.
+        Every buy needs a stop_price (below the market price) so the
+        loss if that stop is hit can be held to max_risk_per_trade.
         """
 
         if approved is not True:
@@ -49,6 +52,16 @@ class PaperTradingEngine:
 
         if not math.isfinite(market_price) or market_price <= 0:
             raise ValueError("Market price must be a positive finite number")
+
+        if side == "buy":
+            if stop_price is None:
+                raise ValueError("A stop_price is required for purchases")
+
+            if not math.isfinite(stop_price) or stop_price <= 0:
+                raise ValueError("Stop price must be a positive finite number")
+
+            if stop_price >= market_price:
+                raise ValueError("Stop price must be below the market price")
 
         # Prepare current prices for every asset already held.
         prices = dict(market_prices or {})
@@ -93,6 +106,21 @@ class PaperTradingEngine:
                 raise PermissionError(
                     "Purchase blocked by risk manager: "
                     + "; ".join(assessment.reasons)
+                )
+
+            # Limit the loss if the purchase is stopped out.
+            risk_amount = self.risk_manager.calculate_trade_risk(
+                quantity, execution_price, stop_price
+            )
+            max_risk = self.risk_manager.max_risk_amount(
+                assessment.portfolio_value
+            )
+
+            if risk_amount > max_risk:
+                raise PermissionError(
+                    "Purchase blocked by risk manager: "
+                    f"risk per trade {risk_amount:.2f} USDT exceeds "
+                    f"limit {max_risk:.2f} USDT"
                 )
 
             portfolio.cash_balance -= total_cost
