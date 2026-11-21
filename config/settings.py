@@ -5,7 +5,12 @@ future API keys must be read from environment variables.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from pathlib import Path
+
+# The project root is the folder that contains the config/ folder.
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 # Safety switch. Real-money trading is NOT supported in this version.
 # Changing this value does not add any real-order code; it exists so the
@@ -41,11 +46,18 @@ class Settings:
     # Where market data and logs are stored.
     data_dir: str = "data"
     log_dir: str = "logs"
+    # File name of the SQLite database, inside data_dir.
+    database_filename: str = "project_quant.db"
     real_money_trading: bool = field(default=REAL_MONEY_TRADING, init=False)
 
     def __post_init__(self) -> None:
-        if self.initial_balance_usdt <= 0:
-            raise ValueError("initial_balance_usdt must be positive")
+        if (
+            not math.isfinite(self.initial_balance_usdt)
+            or self.initial_balance_usdt <= 0
+        ):
+            raise ValueError(
+                "initial_balance_usdt must be positive and finite"
+            )
         for name in ("fee_rate", "slippage_rate"):
             if not 0 <= getattr(self, name) < 0.1:
                 raise ValueError(f"{name} must be between 0 and 0.1")
@@ -53,8 +65,23 @@ class Settings:
                      "max_daily_loss", "max_drawdown"):
             if not 0 < getattr(self, name) <= 1:
                 raise ValueError(f"{name} must be in (0, 1]")
+        if (
+            not self.database_filename
+            or Path(self.database_filename).name != self.database_filename
+        ):
+            raise ValueError(
+                "database_filename must be a plain file name"
+            )
         if self.real_money_trading or LEVERAGE_ENABLED:
             raise RuntimeError("Real-money trading and leverage are disabled")
+
+    @property
+    def database_path(self) -> Path:
+        """Full database path, resolved from the project root.
+
+        It does not depend on the folder the program is started from.
+        """
+        return PROJECT_ROOT / self.data_dir / self.database_filename
 
 
 def load_settings() -> Settings:
